@@ -72,7 +72,6 @@ import java.util.TimerTask;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import android.annotation.TargetApi;
-import android.app.Activity;
 import android.app.Service;
 import android.content.ComponentCallbacks2;
 import android.content.ComponentName;
@@ -113,6 +112,8 @@ public class DownloadService extends Service {
 	public static final String CMD_FASTFORWARD = "github.daneren2005.dsub.CMD_FASTFORWARD";
 	public static final String CANCEL_DOWNLOADS = "github.daneren2005.dsub.CANCEL_DOWNLOADS";
 	public static final String START_PLAY = "github.daneren2005.dsub.START_PLAYING";
+	public static final String THUMBS_UP = "github.daneren2005.dsub.THUMBS_UP";
+	public static final String THUMBS_DOWN = "github.daneren2005.dsub.THUMBS_DOWN";
 	private static final long DEFAULT_DELAY_UPDATE_PROGRESS = 1000L;
 	private static final double DELETE_CUTOFF = 0.84;
 	private static final int REQUIRED_ALBUM_MATCHES = 4;
@@ -312,7 +313,7 @@ public class DownloadService extends Service {
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		super.onStartCommand(intent, flags, startId);
 		lifecycleSupport.onStart(intent);
-		if(Build.VERSION.SDK_INT >= 26 && !this.isForeground()) {
+		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && intent.getAction() == null) {
 			Notifications.shutGoogleUpNotification(this);
 		}
 		return START_NOT_STICKY;
@@ -392,7 +393,12 @@ public class DownloadService extends Service {
 			unregisterReceiver(audioNoisyReceiver);
 		}
 		mediaRouter.destroy();
-		Notifications.hidePlayingNotification(this, this, handler);
+		if (Util.getPreferences(this).getBoolean(Constants.PREFERENCES_KEY_PERSISTENT_NOTIFICATION, false)
+				&& Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+			stopForeground(android.app.Service.STOP_FOREGROUND_DETACH);
+		} else {
+			Notifications.hidePlayingNotification(this, this, handler);
+		}
 		Notifications.hideDownloadingNotification(this, this, handler);
 	}
 
@@ -972,6 +978,10 @@ public class DownloadService extends Service {
 		}
 	}
 
+	public int getDownloadListSize() {
+		return downloadList.size();
+	}
+
 	public int getCurrentPlayingIndex() {
 		return currentPlayingIndex;
 	}
@@ -1121,7 +1131,11 @@ public class DownloadService extends Service {
 			reset();
 			if(index >= size && size != 0) {
 				setCurrentPlaying(0, false);
-				Notifications.hidePlayingNotification(this, this, handler);
+				if(Util.getPreferences(this).getBoolean(Constants.PREFERENCES_KEY_PERSISTENT_NOTIFICATION, false)) {
+					Notifications.showPlayingNotification(this, this, handler, currentPlaying.getSong());
+				} else {
+					Notifications.hidePlayingNotification(this, this, handler);
+				}
 			} else {
 				setCurrentPlaying(null, false);
 			}
@@ -2786,7 +2800,8 @@ public class DownloadService extends Service {
 			}
 		});
 	}
-	public void toggleRating(int rating) {
+	public void toggleRating(int rating) {toggleRating(rating, false);}
+	public void toggleRating(int rating, boolean updateNotification) {
 		if(currentPlaying == null) {
 			return;
 		}
@@ -2796,6 +2811,9 @@ public class DownloadService extends Service {
 			setRating(0);
 		} else {
 			setRating(rating);
+		}
+		if (updateNotification) {
+			Notifications.showPlayingNotification(this, this, handler, entry);
 		}
 	}
 	public void setRating(int rating) {
